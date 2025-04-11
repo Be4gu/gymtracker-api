@@ -13,7 +13,7 @@ export const DATABASE_URL = process.env.DATABASE_URL
 export const corsOptions = {
   origin:
     process.env.NODE_ENV === 'production'
-      ? ['https://gymtracker-client.vercel.app', 'http://localhost:5173'] // Permitir producción y desarrollo
+      ? ['https://gymtracker-client.vercel.app', 'https://gymtrack-client.vercel.app', 'http://localhost:5173'] // Permitir producción y desarrollo
       : '*', // En desarrollo, permitir todas las conexiones
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
   allowedHeaders: ['Content-Type', 'Authorization'],
