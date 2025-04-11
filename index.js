@@ -7,6 +7,7 @@ const prisma = new PrismaClient()
 
 // Para despliegues en Vercel (serverless)
 export default app
+import process from 'process'
 
 // Solo iniciar el servidor en desarrollo local
 if (process.env.NODE_ENV !== 'production') {

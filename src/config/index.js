@@ -1,5 +1,6 @@
 // Configuración de la aplicación
 import dotenv from 'dotenv'
+import process from 'process'
 
 // Cargar variables de entorno
 dotenv.config()
