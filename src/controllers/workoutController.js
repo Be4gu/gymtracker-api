@@ -247,14 +247,18 @@ export const addExercisesToWorkout = async (req, res) => {
 
     if (workout.userId !== req.user.id) {
       return res.status(403).json({ error: 'No tienes permiso para modificar este entrenamiento' })
-    }
-
-    // Validar que haya al menos un ejercicio
+    } // Validar que haya al menos un ejercicio
     if (!exercises || !Array.isArray(exercises) || exercises.length === 0) {
       return res.status(400).json({ error: 'Debes incluir al menos un ejercicio' })
     }
 
-    // Añadir los ejercicios al entrenamiento
+    // Eliminar todos los ejercicios existentes del entrenamiento
+    await prisma.$queryRaw`
+      DELETE FROM "Exercise"
+      WHERE "workoutId" = ${parseInt(id)}
+    `
+
+    // Añadir los nuevos ejercicios al entrenamiento
     const workoutExercises = []
 
     for (const exerciseData of exercises) {
@@ -366,10 +370,56 @@ export const addExercisesToWorkout = async (req, res) => {
         exerciseTemplateId: exercise.exerciseTemplateId
       }))
     }
-
     res.status(200).json(formattedWorkout)
   } catch (error) {
     console.error('Error al añadir ejercicios:', error)
+    res.status(500).json({ error: 'Error interno del servidor' })
+  }
+}
+
+// Eliminar un entrenamiento completo
+export const deleteWorkout = async (req, res) => {
+  const { id } = req.params
+
+  try {
+    const workoutId = parseInt(id)
+
+    if (isNaN(workoutId)) {
+      return res.status(400).json({ error: 'ID de entrenamiento inválido' })
+    }
+
+    // Verificar que el entrenamiento existe y pertenece al usuario
+    const workouts = await prisma.$queryRaw`
+      SELECT id, "userId"
+      FROM "Workout"
+      WHERE id = ${workoutId}
+    `
+
+    if (!workouts || workouts.length === 0) {
+      return res.status(404).json({ error: 'Entrenamiento no encontrado' })
+    }
+
+    const workout = workouts[0]
+
+    if (workout.userId !== req.user.id) {
+      return res.status(403).json({ error: 'No tienes permiso para eliminar este entrenamiento' })
+    }
+
+    // Eliminar primero los ejercicios relacionados
+    await prisma.$queryRaw`
+      DELETE FROM "Exercise"
+      WHERE "workoutId" = ${workoutId}
+    `
+
+    // Eliminar el entrenamiento
+    await prisma.$queryRaw`
+      DELETE FROM "Workout"
+      WHERE id = ${workoutId}
+    `
+
+    res.status(200).json({ message: 'Entrenamiento eliminado correctamente' })
+  } catch (error) {
+    console.error('Error al eliminar entrenamiento:', error)
     res.status(500).json({ error: 'Error interno del servidor' })
   }
 }

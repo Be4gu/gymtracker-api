@@ -1,142 +1,13 @@
 import { PrismaClient } from '@prisma/client'
-import { hashPassword, comparePassword, generateToken } from '../utils/auth.js'
+import { hashPassword, generateToken } from '../utils/auth.js'
+import { verifyGoogleToken } from '../utils/googleAuth.js'
+import { exchangeCodeForIdToken } from '../utils/googleAuth.js'
 
 const prisma = new PrismaClient()
 
-// Registrar un nuevo usuario
-export const register = async (req, res) => {
-  const { email, password } = req.body // Omitimos 'name' intencionalmente
-
-  if (!email || !password) {
-    return res.status(400).json({ error: 'Email y contraseña son requeridos' })
-  }
-
-  try {
-    // Verificar si el usuario ya existe - usando una consulta que no incluye 'name'
-    const existingUser = await prisma.$queryRaw`SELECT id, email, password FROM "User" WHERE email = ${email} LIMIT 1`
-
-    if (existingUser && existingUser.length > 0) {
-      return res.status(400).json({ error: 'El usuario ya existe' })
-    }
-
-    // Encriptar contraseña
-    const hashedPassword = await hashPassword(password)
-
-    // Crear usuario sin el campo name mediante una consulta raw
-    const [user] = await prisma.$queryRaw`
-      INSERT INTO "User" (email, password) 
-      VALUES (${email}, ${hashedPassword}) 
-      RETURNING id, email
-    `
-
-    // Crear grupos musculares por defecto para el usuario
-    const defaultMuscleGroups = [
-      { name: 'Pecho y Tríceps', userId: user.id, isPublic: true },
-      { name: 'Espalda y Bíceps', userId: user.id, isPublic: true },
-      { name: 'Pierna', userId: user.id, isPublic: true },
-      { name: 'Hombros', userId: user.id, isPublic: true },
-      { name: 'Otros', userId: user.id, isPublic: true }
-    ]
-
-    // Crear grupos musculares en una operación única
-    const muscleGroupsCreated = await Promise.all(
-      defaultMuscleGroups.map((group) =>
-        prisma.muscleGroup.create({
-          data: group
-        })
-      )
-    )
-
-    // Crear ejercicios por defecto para los grupos creados
-    const exercises = [
-      // Pecho y Tríceps
-      { name: 'Press de banca', muscleGroupId: muscleGroupsCreated[0].id, userId: user.id, isPublic: true },
-      { name: 'Press inclinado', muscleGroupId: muscleGroupsCreated[0].id, userId: user.id, isPublic: true },
-      { name: 'Press declinado', muscleGroupId: muscleGroupsCreated[0].id, userId: user.id, isPublic: true },
-      { name: 'Aperturas con mancuernas', muscleGroupId: muscleGroupsCreated[0].id, userId: user.id, isPublic: true },
-
-      // Espalda y Bíceps
-      { name: 'Dominadas', muscleGroupId: muscleGroupsCreated[1].id, userId: user.id, isPublic: true },
-      { name: 'Remo', muscleGroupId: muscleGroupsCreated[1].id, userId: user.id, isPublic: true },
-      { name: 'Jalón al pecho', muscleGroupId: muscleGroupsCreated[1].id, userId: user.id, isPublic: true },
-      { name: 'Curl de bíceps', muscleGroupId: muscleGroupsCreated[1].id, userId: user.id, isPublic: true },
-
-      // Pierna
-      { name: 'Sentadillas', muscleGroupId: muscleGroupsCreated[2].id, userId: user.id, isPublic: true },
-      { name: 'Peso muerto', muscleGroupId: muscleGroupsCreated[2].id, userId: user.id, isPublic: true },
-      { name: 'Prensa', muscleGroupId: muscleGroupsCreated[2].id, userId: user.id, isPublic: true },
-      { name: 'Extensiones de cuádriceps', muscleGroupId: muscleGroupsCreated[2].id, userId: user.id, isPublic: true },
-
-      // Hombros
-      { name: 'Press militar', muscleGroupId: muscleGroupsCreated[3].id, userId: user.id, isPublic: true },
-      { name: 'Elevaciones laterales', muscleGroupId: muscleGroupsCreated[3].id, userId: user.id, isPublic: true },
-      { name: 'Elevaciones frontales', muscleGroupId: muscleGroupsCreated[3].id, userId: user.id, isPublic: true },
-      { name: 'Remo al mentón', muscleGroupId: muscleGroupsCreated[3].id, userId: user.id, isPublic: true },
-
-      // Otros
-      { name: 'Crunch abdominal', muscleGroupId: muscleGroupsCreated[4].id, userId: user.id, isPublic: true },
-      { name: 'Plancha', muscleGroupId: muscleGroupsCreated[4].id, userId: user.id, isPublic: true },
-      { name: 'Extensiones de espalda', muscleGroupId: muscleGroupsCreated[4].id, userId: user.id, isPublic: true },
-      { name: 'Russian twist', muscleGroupId: muscleGroupsCreated[4].id, userId: user.id, isPublic: true }
-    ]
-
-    // Limitar el número de ejercicios para no sobrecargar
-    const limitedExercises = exercises.slice(0, 20)
-
-    // Crear ejercicios en una operación única
-    await Promise.all(
-      limitedExercises.map((exercise) =>
-        prisma.exerciseTemplate.create({
-          data: exercise
-        })
-      )
-    )
-
-    // Generar token de autenticación
-    const token = generateToken(user)
-
-    // Devolver usuario sin contraseña
-    const { password: _, ...userWithoutPassword } = user
-    res.status(201).json({ user: userWithoutPassword, token })
-  } catch (error) {
-    console.error('Error al registrar usuario:', error)
-    res.status(500).json({ error: `Error interno del servidor: ${error.message}` })
-  }
-}
-
-// Iniciar sesión
-export const login = async (req, res) => {
-  const { email, password } = req.body
-
-  if (!email || !password) {
-    return res.status(400).json({ error: 'Email y contraseña son requeridos' })
-  }
-
-  try {
-    // Buscar usuario por email
-    const user = await prisma.$queryRaw`SELECT id, email, password FROM "User" WHERE email = ${email} LIMIT 1`
-
-    if (!user || user.length === 0) {
-      return res.status(400).json({ error: 'Usuario o contraseña incorrectos' })
-    }
-
-    // Verificar contraseña
-    const validPassword = await comparePassword(password, user[0].password)
-    if (!validPassword) {
-      return res.status(400).json({ error: 'Usuario o contraseña incorrectos' })
-    }
-
-    // Generar token
-    const token = generateToken(user[0])
-
-    // Devolver usuario sin contraseña
-    const { password: _, ...userWithoutPassword } = user[0]
-    res.status(200).json({ user: userWithoutPassword, token })
-  } catch (error) {
-    console.error('Error al iniciar sesión:', error)
-    res.status(500).json({ error: 'Error interno del servidor' })
-  }
-}
+// Eliminar funciones de registro e inicio de sesión por email/contraseña
+export const register = (req, res) => res.status(404).json({ error: 'Método no soportado' })
+export const login = (req, res) => res.status(404).json({ error: 'Método no soportado' })
 
 // Obtener perfil del usuario
 export const getProfile = async (req, res) => {
@@ -151,5 +22,70 @@ export const getProfile = async (req, res) => {
   } catch (error) {
     console.error('Error al obtener perfil:', error)
     res.status(500).json({ error: 'Error interno del servidor' })
+  }
+}
+
+// Actualizar el controlador para manejar el intercambio de código por id_token
+export const googleAuth = async (req, res) => {
+  try {
+    let idToken
+
+    if (req.body.code) {
+      // Intercambiar el código por un id_token
+      idToken = await exchangeCodeForIdToken(req.body.code)
+    } else if (req.body.credential) {
+      // Usar directamente el id_token si está disponible
+      idToken = req.body.credential
+    } else {
+      return res.status(400).json({ error: 'Se requiere un código o id_token de Google' })
+    }
+
+    // Verificar el id_token de Google
+    const { email, name, googleId } = await verifyGoogleToken({ credential: idToken })
+
+    // Buscar si el usuario ya existe
+    let user = await prisma.$queryRaw`SELECT id, email, name, google_id FROM "User" WHERE email = ${email} LIMIT 1`
+
+    if (!user || user.length === 0) {
+      // El usuario no existe, crearlo
+      const randomPassword = Math.random().toString(36).slice(-8) // Generar contraseña aleatoria
+      const hashedPassword = await hashPassword(randomPassword)
+
+      // Crear el nuevo usuario
+      ;[user] = await prisma.$queryRaw`
+        INSERT INTO "User" (email, password, name, google_id) 
+        VALUES (${email}, ${hashedPassword}, ${name || email.split('@')[0]}, ${googleId}) 
+        RETURNING id, email, name, google_id
+      `
+
+      // Crear grupos musculares por defecto para el usuario
+      const defaultMuscleGroups = [
+        { name: 'Pecho y Tríceps', userId: user.id, isPublic: true },
+        { name: 'Espalda y Bíceps', userId: user.id, isPublic: true },
+        { name: 'Pierna', userId: user.id, isPublic: true },
+        { name: 'Hombros', userId: user.id, isPublic: true },
+        { name: 'Otros', userId: user.id, isPublic: true }
+      ]
+
+      await Promise.all(
+        defaultMuscleGroups.map((group) =>
+          prisma.muscleGroup.create({
+            data: group
+          })
+        )
+      )
+    } else {
+      // Usuario ya existe
+      user = user[0]
+    }
+
+    // Generar token
+    const token = generateToken(user)
+
+    // Devolver usuario y token
+    res.status(200).json({ user, token })
+  } catch (error) {
+    console.error('Error en autenticación con Google:', error)
+    res.status(500).json({ error: `Error en autenticación con Google: ${error.message}` })
   }
 }

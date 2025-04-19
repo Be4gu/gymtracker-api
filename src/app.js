@@ -7,6 +7,7 @@ import authRoutes from './routes/authRoutes.js'
 import muscleGroupRoutes from './routes/muscleGroupRoutes.js'
 import exerciseRoutes from './routes/exerciseRoutes.js'
 import workoutRoutes from './routes/workoutRoutes.js'
+import statsRoutes from './routes/statsRoutes.js'
 
 // Crear la aplicación Express
 const app = express()
@@ -20,6 +21,7 @@ app.use('/auth', authRoutes)
 app.use('/muscle-groups', muscleGroupRoutes)
 app.use('/exercises', exerciseRoutes)
 app.use('/workouts', workoutRoutes)
+app.use('/stats', statsRoutes)
 
 // Ruta base
 app.get('/', (req, res) => {
@@ -31,7 +33,7 @@ app.get('/', (req, res) => {
 })
 
 // Middleware para manejo de errores
-app.use((err, req, res, next) => {
+app.use((err, req, res) => {
   console.error(err.stack)
   res.status(500).json({
     error: 'Error interno del servidor',
